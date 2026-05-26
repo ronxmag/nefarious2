@@ -54,6 +54,7 @@ extern int check_if_ipmask(const char *mask);
 
 extern int valid_username(const char* name);
 extern int valid_hostname(const char* name);
+extern int valid_vhost(const char* name);
 
 #define COLOR_BOLD            2   /**< Bold text */
 #define COLOR_COLOR           3   /**< Color text */
@@ -140,4 +141,3 @@ static __inline__ NTL_HDR_strCasediff { NTL_SRC_strCasediff }
 #endif /* FORCEINLINE */
 
 #endif /* INCLUDED_ircd_string_h */
-
