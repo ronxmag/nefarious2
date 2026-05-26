@@ -47,7 +47,7 @@ static const char bcrypt_base64[] =
   "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 /* Default cost factor (2^12 = 4096 iterations) */
-#define BCRYPT_DEFAULT_COST 12
+#define BCRYPT_DEFAULT_COST 13
 
 /** Generate random bytes from /dev/urandom
  * @param buf Buffer to fill
@@ -87,7 +87,7 @@ static char* generate_bcrypt_salt(char* salt, int cost)
     return NULL;
 
   /* Format: $2y$XX$ followed by 22 base64 characters */
-  sprintf(salt, "$2y$%02d$", cost);
+  snprintf(salt, 30, "$2y$%02d$", cost);
 
   /* Encode 16 bytes (128 bits) into 22 base64 characters */
   /* Each group of 3 bytes becomes 4 base64 chars, with padding handled specially */
@@ -129,7 +129,7 @@ const char* ircd_crypt_bcrypt(const char* key, const char* salt)
 
   /* If salt is already a bcrypt hash/salt, use it directly */
   if (strlen(salt) >= 28 && salt[0] == '$' && salt[1] == '2' &&
-      (salt[2] == 'a' || salt[2] == 'b' || salt[2] == 'x' || salt[2] == 'y') && salt[3] == '$')
+      (salt[2] == 'a' || salt[2] == 'b' || salt[2] == 'y') && salt[3] == '$')
   {
     result = crypt(key, salt);
   }
@@ -177,15 +177,12 @@ void ircd_register_crypt_bcrypt(void)
   crypt_mech->shortname = "crypt_bcrypt";
   crypt_mech->description = "Bcrypt password hash ($2y$).";
   crypt_mech->crypt_function = &ircd_crypt_bcrypt;
-  /* Use a real tag so this mech can be selected via the normal token
-   * dispatch loop in ircd_crypt(). An empty token would have matched
-   * any salt (ircd_strncmp with n=0 always returns 0), causing
-   * untagged crypt(3) and libc-crypt formats ($1$, $5$, $6$) to be
-   * dispatched here and re-hashed against a freshly generated salt.
-   * Existing raw $2[aby]$ stored hashes are still verified by the
-   * explicit prefix branch after the dispatch loop. */
-  crypt_mech->crypt_token = "$BCRYPT$";
-  crypt_mech->crypt_token_size = 8;
+  /* Note: We use an empty token because bcrypt hashes are detected
+   * directly by their $2y$ prefix in ircd_crypt(), not via the
+   * normal token mechanism. This registration is primarily for
+   * umkpasswd to generate bcrypt passwords. */
+  crypt_mech->crypt_token = "";
+  crypt_mech->crypt_token_size = 0;
 
   ircd_crypt_register_mech(crypt_mech);
 }
