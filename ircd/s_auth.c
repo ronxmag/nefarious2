@@ -119,16 +119,15 @@ static struct {
   unsigned int length;
 } HeaderMessages [] = {
 #define MSG(STR) { STR, sizeof(STR) - 1 }
-  MSG("NOTICE * :*** Looking up your hostname\r\n"),
-  MSG("NOTICE * :*** Found your hostname\r\n"),
-  MSG("NOTICE * :*** Couldn't look up your hostname\r\n"),
-  MSG("NOTICE * :*** Checking Ident\r\n"),
-  MSG("NOTICE * :*** Got ident response\r\n"),
-  MSG("NOTICE * :*** No ident response\r\n"),
+  MSG("NOTICE * :*** 4Hello! 12Wake up!\r\n"),
+  MSG("NOTICE * :*** 4Knock, knock. 12Who`s there?\r\n"),
+  MSG("NOTICE * :*** 4Cow! 12Cow says who?\r\n"),
+  MSG("NOTICE * :*** 4No, a cow says 3mooooo!\r\n"),
+  MSG("NOTICE * :*** 4Knock, knock. 12Who`s there?\r\n"),
+  MSG("NOTICE * :*** 4Abbott! 12Abbott who?\r\n"),
   MSG("NOTICE * :*** \r\n"),
-  MSG("NOTICE * :*** Your forward and reverse DNS do not match, "
-    "ignoring hostname.\r\n"),
-  MSG("NOTICE * :*** Invalid hostname\r\n")
+  MSG("NOTICE * :*** 4Abbott time you 12let me in!\r\n"),
+  MSG("NOTICE * :*** 4Entering to the 12Matrix!\r\n")
 #undef MSG
 };
 
