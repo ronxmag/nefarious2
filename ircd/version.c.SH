@@ -26,7 +26,7 @@ if test -f .release
 then
 	cvs_version=`cat .release`
 else
-        cvs_version=`git describe --dirty --long --always`
+        cvs_version=`git describe --tags --long --always`
 fi
 
 /bin/cat >version.c <<!SUB!THIS!
@@ -66,32 +66,8 @@ const char *infotext[] = {
     "IRC --",
     "This program is free software; see LICENSE in the distribution",
     "",
-    "Based on the original code written by Jarkko Oikarinen, version 2.6:",
-    "Wiz          Jarkko Oikarinen         <jto@tolsun.oulu.fi>",
-    "",
-    "The main developer of version u2.9 and u2.10 was:",
-    "Run          Carlo Wood               <carlo@runaway.xs4all.nl>",
-    "",
-    "The head developer of the u2.10 source tree was:",
-    "Bleep        Thomas Helvey            <tomh@inxpress.net>",
-    "",
-    "The current maintainors of the u2.10 source tree are:",
-    "Isomer       Perry Lorier             <perry@coders.net>",
-    "Kev          Kevin Mitchell           <klmitch@mit.edu>",
-    "",
-    "Contributors to this release:",
-    "Kev, Isomer, Gte, Ghostwolf, Bleep",
-    "Debugging and support:",
-    "SeKs, Maniac-, HeKTik, OmniDynmc, Liandrin, Dianora",
-    "Special thanks to Angel and Buff for believing in us and putting",
-    "up with frantic late night phone calls",
-    "",
-    "Nefarious 2.0 modifications were provided by:",
-    "Jobe         Matthew Beeching         <jobe@mdbnet.co.uk>",
-    "Rubin        Alex Schumann            <rubin@afternet.org>",
-    "",
-    "Additional contributors to the Nefarious 2.0 branch:",
-    "Obnoxious, Andromeda",
+    "This code was heavily modified use it at your own risk!",
+    "DecrypteD       Dark Unix        <admin@darkunix.org>",
     "",
     "Thanks goes to all other people who contributed to any version.",
     "A full listing of all coders can be found in doc/Authors in the",
