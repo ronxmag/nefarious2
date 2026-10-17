@@ -124,8 +124,8 @@ static struct {
   MSG("NOTICE * :*** 4Cow! 12Cow says who?\r\n"),
   MSG("NOTICE * :*** 4Knock, knock. 12Who`s there?\r\n"),
   MSG("NOTICE * :*** 4Knock, knock. 12Who`s there?\r\n"),
-  MSG("NOTICE * :*** \r\n"),
   MSG("NOTICE * :*** 4No, a cow says 3mooooo!\r\n"),
+  MSG("NOTICE * :*** \r\n"),
   MSG("NOTICE * :*** 4Abbott time you 12let me in!\r\n"),
   MSG("NOTICE * :*** 4Entering to the 12Matrix!\r\n")
 #undef MSG
