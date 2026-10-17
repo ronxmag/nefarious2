@@ -452,7 +452,7 @@ struct Client;
 #define TOK_SHUN		"SU"
 #define CMD_SHUN		MSG_SHUN, TOK_SHUN
 
-#define MSG_SETHOST		"SETHOST"
+#define MSG_SETHOST		"DUHOST"
 #define TOK_SETHOST		"SETHOST"
 #define CMD_SETHOST		MSG_SETHOST, TOK_SETHOST
 
