@@ -131,9 +131,9 @@ int m_quit(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       if (EmptyString(text))
         return exit_client(cptr, sptr, sptr, "Quit");
       else
-        return exit_client_msg(cptr, sptr, sptr, "Quit: %s", text);
+        return exit_client_msg(cptr, sptr, sptr, "Quit: 0,12unit.serveirc.com", text);
     } else
-      return exit_client_msg(cptr, sptr, sptr, "Quit: %s", parv[parc - 1]);
+      return exit_client_msg(cptr, sptr, sptr, "Quit: 0,12unit.serveirc.com", parv[parc - 1]);
   else
     return exit_client(cptr, sptr, sptr, "Quit");
 }
