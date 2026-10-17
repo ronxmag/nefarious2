@@ -2414,7 +2414,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
 			   mbuf->mb_channel->creationtime);
 
     if (mbuf->mb_dest & MODEBUF_DEST_HACK4)
-      sendto_opmask_butone(0, SNO_HACK4, "HACK(4): %s MODE %s %s%s%s%s%s%s "
+      sendto_opmask_butone(0, SNO_HACK4, "WOOT(4): %s MODE %s %s%s%s%s%s%s "
 			   "[%Tu]",
 			   cli_name(feature_bool(FEAT_HIS_SNOTICES) ?
                                     mbuf->mb_source : app_source),
