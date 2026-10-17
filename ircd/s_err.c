@@ -34,11 +34,11 @@ static Numeric replyTable[] = {
 /* 000 */
   { 0 },
 /* 001 */
-  { RPL_WELCOME, ":Welcome to the %s IRC Network%s%s, %s", "001" },
+  { RPL_WELCOME, ":Welcome to the %s IRC Network%s%s, 4[12%s4]", "001" },
 /* 002 */
   { RPL_YOURHOST, ":Your host is %s, running version %s", "002" },
 /* 003 */
-  { RPL_CREATED, ":This server was created %s", "003" },
+  { RPL_CREATED, ":This server was created Friday, 11 June, PST at 1999 07:07:99 AM", "003" },
 /* 004 */
   { RPL_MYINFO, "%s %s %s %s %s", "004" },
 /* 005 */
