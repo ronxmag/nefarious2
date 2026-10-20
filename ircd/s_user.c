@@ -695,6 +695,7 @@ static const struct UserMode {
   { FLAG_ACCOUNTONLY,  'R' },
   { FLAG_WHOIS_NOTICE, 'W' },
   { FLAG_ADMIN,        'a' },
+  { FLAG_NETADMIN,     'N' },
   { FLAG_XTRAOP,       'X' },
   { FLAG_NOLINK,       'L' },
   { FLAG_SSL,          'z' },
@@ -1373,7 +1374,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   char* sethost = NULL;
   struct Client *acptr = NULL;
 
-  if (MyUser(sptr) && (allow_modes & ALLOWMODES_SVSMODE))
+  if (MyUser(sptr) && (allow_modes & ALLOWMODES_SAMODE))
     is_svsmode = 1;
 
   what = MODE_ADD;
@@ -1597,6 +1598,12 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         else
           ClearAdmin(acptr);
         break;
+      case 'N':
+        if (what == MODE_ADD)
+          SetNetAdmin(acptr);
+        else
+          ClearNetAdmin(acptr);
+        break;
       case 'X':
         if (what == MODE_ADD)
           SetXtraOp(acptr);
@@ -1678,6 +1685,8 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
       ClearLocOp(acptr);
     if (!HasPriv(acptr, PRIV_ADMIN) && !FlagHas(&setflags, FLAG_ADMIN) && IsAdmin(acptr))
       ClearAdmin(acptr);
+    if (!HasPriv(acptr, PRIV_NETADMIN) && !FlagHas(&setflags, FLAG_NETADMIN) && IsNetAdmin(acptr))
+      ClearNetAdmin(acptr);
     if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(acptr))
       ClrFlag(acptr, FLAG_ACCOUNT);
     if (!FlagHas(&setflags, FLAG_CLOAKIP) && IsCloakIP(acptr))
