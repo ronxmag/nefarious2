@@ -56,4 +56,3 @@ extern char*          debugmode;
 extern int	      running;
 
 #endif /* INCLUDED_ircd_h */
-
