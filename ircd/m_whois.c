@@ -210,6 +210,23 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
          *(buf + len++) = '*';
        if (IsDelayedJoin(chan) && (sptr != acptr))
          *(buf + len++) = '<';
+       else if (IsNamesX(sptr) || CapActive(sptr, CAP_NAMESX)) {
+         /* IRCv3 multi-prefix: show ALL applicable prefixes */
+         if (feature_bool(FEAT_OWNERPROTECT) && IsOwner(chan))
+           *(buf + len++) = '~';
+         if (feature_bool(FEAT_OWNERPROTECT) && IsProtect(chan))
+           *(buf + len++) = '&';
+         if (IsChanOp(chan))
+           *(buf + len++) = '@';
+         if (IsHalfOp(chan))
+           *(buf + len++) = '%';
+         if (HasVoice(chan))
+           *(buf + len++) = '+';
+       }
+       else if (feature_bool(FEAT_OWNERPROTECT) && IsOwner(chan))
+         *(buf + len++) = '~';
+       else if (feature_bool(FEAT_OWNERPROTECT) && IsProtect(chan))
+         *(buf + len++) = '&';
        else if (IsChanOp(chan))
          *(buf + len++) = '@';
        else if (IsHalfOp(chan))
@@ -238,7 +255,9 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
        send_reply(sptr, RPL_AWAY, name, user->away);
 
     if (SeeOper(sptr,acptr)) {
-       if (IsAdmin(acptr))
+       if (IsNetAdmin(acptr))
+         send_reply(sptr, RPL_WHOISOPERATOR, name, feature_str(FEAT_WHOIS_NETADMIN));
+       else if (IsAdmin(acptr))
          send_reply(sptr, RPL_WHOISOPERATOR, name, feature_str(FEAT_WHOIS_ADMIN));
        else
          send_reply(sptr, RPL_WHOISOPERATOR, name, feature_str(FEAT_WHOIS_OPER));
