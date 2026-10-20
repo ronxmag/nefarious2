@@ -228,7 +228,7 @@ void do_join(struct Client *cptr, struct Client *sptr, struct JoinBuf *join,
       case ERR_BANNEDFROMCHAN: err = 'b'; break;
       case ERR_BADCHANNELKEY:  err = 'k'; break;
       case ERR_NEEDREGGEDNICK: err = 'r'; break;
-      case ERR_ADMINONLYCHAN:  err = 'a'; break;
+      case ERR_ADMINONLYCHAN:  err = 'G'; break;
       case ERR_OPERONLYCHAN:   err = 'O'; break;
       case ERR_SSLONLYCHAN:    err = 'Z'; break;
       default: err = '?'; break;
