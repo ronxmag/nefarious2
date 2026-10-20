@@ -137,6 +137,7 @@ enum Priv
     PRIV_HIDE_CHANNELS, /**< oper can set user mode +n */
     PRIV_HIDE_IDLE, /**< oper can set user mode +I */
     PRIV_ADMIN, /**< oper is an admin (gets, can set and unset mode +a) */
+    PRIV_NETADMIN, /**< oper is a network admin (gets, can set and unset mode +N) */
     PRIV_XTRAOP, /**< oper can set/unset user mode +X */
     PRIV_SERVICE, /**< oper can set/unset user mode +k */
     PRIV_REMOTE, /**< oper can OPER from another server */
