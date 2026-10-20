@@ -249,15 +249,16 @@ extern int ms_smo(struct Client*, struct Client*, int, char*[]);
 extern int ms_sno(struct Client*, struct Client*, int, char*[]);
 extern int ms_squit(struct Client*, struct Client*, int, char*[]);
 extern int ms_stats(struct Client*, struct Client*, int, char*[]);
-extern int ms_svsident(struct Client*, struct Client*, int, char*[]);
-extern int ms_svsinfo(struct Client*, struct Client*, int, char*[]);
-extern int ms_svsjoin(struct Client*, struct Client*, int, char*[]);
-extern int ms_svsmode(struct Client*, struct Client*, int, char*[]);
-extern int ms_svsnick(struct Client*, struct Client*, int, char*[]);
-extern int ms_svsnoop(struct Client*, struct Client*, int, char*[]);
-extern int ms_svspart(struct Client*, struct Client*, int, char*[]);
-extern int ms_svsquit(struct Client*, struct Client*, int, char*[]);
-extern int ms_swhois(struct Client*, struct Client*, int, char*[]);
+extern int ms_sajoin(struct Client*, struct Client*, int, char*[]);
+extern int ms_sapart(struct Client*, struct Client*, int, char*[]);
+extern int ms_sacycle(struct Client*, struct Client*, int, char*[]);
+extern int ms_sanick(struct Client*, struct Client*, int, char*[]);
+extern int ms_samode(struct Client*, struct Client*, int, char*[]);
+extern int ms_sanoop(struct Client*, struct Client*, int, char*[]);
+extern int ms_saident(struct Client*, struct Client*, int, char*[]);
+extern int ms_sainfo(struct Client*, struct Client*, int, char*[]);
+extern int ms_saquit(struct Client*, struct Client*, int, char*[]);
+extern int ms_sawhois(struct Client*, struct Client*, int, char*[]);
 extern int ms_tempshun(struct Client*, struct Client*, int, char*[]);
 extern int ms_topic(struct Client*, struct Client*, int, char*[]);
 extern int ms_trace(struct Client*, struct Client*, int, char*[]);
@@ -273,5 +274,17 @@ extern int ms_xquery(struct Client*, struct Client*, int, char*[]);
 extern int ms_xreply(struct Client*, struct Client*, int, char*[]);
 extern int ms_zline(struct Client*, struct Client*, int, char*[]);
 
-#endif /* INCLUDED_handlers_h */
+/* SA* oper command handlers (services root) */
+extern int mo_sajoin(struct Client*, struct Client*, int, char*[]);
+extern int mo_sapart(struct Client*, struct Client*, int, char*[]);
+extern int mo_sacycle(struct Client*, struct Client*, int, char*[]);
+extern int mo_sanick(struct Client*, struct Client*, int, char*[]);
+extern int mo_samode(struct Client*, struct Client*, int, char*[]);
+extern int mo_saquit(struct Client*, struct Client*, int, char*[]);
+extern int mo_satopic(struct Client*, struct Client*, int, char*[]);
+extern int mo_sawhois(struct Client*, struct Client*, int, char*[]);
+extern int mo_saident(struct Client*, struct Client*, int, char*[]);
+extern int mo_sainfo(struct Client*, struct Client*, int, char*[]);
+extern int mo_sanoop(struct Client*, struct Client*, int, char*[]);
 
+#endif /* INCLUDED_handlers_h */
