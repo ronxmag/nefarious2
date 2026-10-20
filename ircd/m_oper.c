@@ -139,6 +139,27 @@ void do_oper(struct Client* cptr, struct Client* sptr, struct ConfItem* aconf)
       SetOper(sptr);
       if (HasPriv(sptr, PRIV_ADMIN))
         SetAdmin(sptr);
+      /*
+       * Network Administrator (+N) requires services authentication.
+       * If the user has PRIV_NETADMIN but is not yet identified with
+       * NickServ, they get +a (Server Admin) only. Once they auth,
+       * +N is promoted automatically via the ACCOUNT handler.
+       * This prevents privilege escalation without services verification.
+       */
+      if (HasPriv(sptr, PRIV_NETADMIN)) {
+        if (IsAccount(sptr)) {
+          SetNetAdmin(sptr);
+        } else {
+          SetAdmin(sptr); /* cap at +a until auth */
+          sendcmdto_one(&me, CMD_NOTICE, sptr,
+            "%C :You have Network Administrator privileges, but +N requires "
+            "NickServ authentication. Identify with services to activate +N.",
+            sptr);
+          sendto_opmask_butone(0, SNO_SACMD,
+            "%C opered with netadmin privileges but is not authed — capped at +a",
+            sptr);
+        }
+      }
       if (!IsHideOper(sptr) && !IsChannelService(sptr) && !IsBot(sptr))
         ++UserStats.opers;
     }
@@ -166,7 +187,12 @@ void do_oper(struct Client* cptr, struct Client* sptr, struct ConfItem* aconf)
     client_send_privs(&me, sptr, sptr);
 
     if (HasPriv(sptr, PRIV_PROPAGATE)) {
-      modes = (HasPriv(sptr, PRIV_ADMIN) ? "aowsg" : "owsg");
+      if (HasPriv(sptr, PRIV_NETADMIN) && IsAccount(sptr))
+        modes = "aNowsg";
+      else if (HasPriv(sptr, PRIV_ADMIN) || HasPriv(sptr, PRIV_NETADMIN))
+        modes = "aowsg";  /* netadmin without auth caps at +a */
+      else
+        modes = "owsg";
     } else {
       modes = "Owsg";
     }
@@ -206,7 +232,7 @@ void do_oper(struct Client* cptr, struct Client* sptr, struct ConfItem* aconf)
       sendcmdto_one(&me, CMD_NOTICE, sptr, "%C :%s", sptr, ajoinnotice);
 
     if (!MyUser(sptr)) {
-      sendcmdto_serv_butone(&me, CMD_SVSJOIN, NULL, "%C %s", sptr, ajoinchan);
+      sendcmdto_serv_butone(&me, CMD_SAJOIN, NULL, "%C %s", sptr, ajoinchan);
     } else {
       ircd_strncpy(chan, ajoinchan, CHANNELLEN + 1);
       join[0] = cli_name(sptr);
@@ -222,7 +248,7 @@ void do_oper(struct Client* cptr, struct Client* sptr, struct ConfItem* aconf)
       sendcmdto_one(&me, CMD_NOTICE, sptr, "%C :%s", sptr, aconf->autojoinnotice);
 
     if (!MyUser(sptr)) {
-      sendcmdto_serv_butone(&me, CMD_SVSJOIN, NULL, "%C %s", sptr, aconf->autojoinchan);
+      sendcmdto_serv_butone(&me, CMD_SAJOIN, NULL, "%C %s", sptr, aconf->autojoinchan);
     } else {
       ircd_strncpy(chan, aconf->autojoinchan, CHANNELLEN + 1);
       join[0] = cli_name(sptr);
@@ -235,7 +261,7 @@ void do_oper(struct Client* cptr, struct Client* sptr, struct ConfItem* aconf)
   if (!EmptyString(aconf->swhois))
   {
     ircd_strncpy(cli_user(sptr)->swhois, aconf->swhois, BUFSIZE + 1);
-    sendcmdto_serv_butone(&me, CMD_SWHOIS, NULL, "%C :%s", sptr, aconf->swhois);
+    sendcmdto_serv_butone(&me, CMD_SAWHOIS, NULL, "%C :%s", sptr, aconf->swhois);
   }
 
   sendto_opmask_butone_global((MyUser(sptr) ? &me : NULL), SNO_OLDSNO,
@@ -409,4 +435,3 @@ int mo_oper(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   send_reply(sptr, RPL_YOUREOPER);
   return 0;
 }
-
