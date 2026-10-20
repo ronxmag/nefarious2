@@ -209,6 +209,7 @@ enum Flag
     FLAG_BOT,                       /**< Bot */
     FLAG_GEOIP,                     /**< User has had GeoIP data applied */
     FLAG_ADMIN,                     /**< User is an admin (user mode +a) */
+	FLAG_NETADMIN,                  /**< User is a network admin (user mode +N) */
     FLAG_XTRAOP,                    /**< User has user mode +X (XtraOp) */
     FLAG_NOLINK,                    /**< Client will not automatically get redirected if +L is set on a chan */
 
@@ -774,6 +775,7 @@ struct Client {
 #define IsGeoIP(x)              HasFlag(x, FLAG_GEOIP)
 /** Return non-zero if the client is an admin. */
 #define IsAdmin(x)              HasFlag(x, FLAG_ADMIN)
+#define IsNetAdmin(x)           HasFlag(x, FLAG_NETADMIN)
 /** Return non-zero if the client has set +X. */
 #define IsXtraOp(x)             HasFlag(x, FLAG_XTRAOP)
 /** Return non-zero if the client has set +L. */
@@ -895,6 +897,7 @@ struct Client {
 #define SetGeoIP(x)             SetFlag(x, FLAG_GEOIP)
 /** Mark a client as being an admin. */
 #define SetAdmin(x)             SetFlag(x, FLAG_ADMIN)
+#define SetNetAdmin(x)          SetFlag(x, FLAG_NETADMIN)
 /** Mark a client as having mode +X (XtraOp). */
 #define SetXtraOp(x)            SetFlag(x, FLAG_XTRAOP)
 /** Mark a client as having mode +L (No Redirect). */
@@ -1001,6 +1004,7 @@ struct Client {
 #define ClearGeoIP(x)           ClrFlag(x, FLAG_GEOIP)
 /** Client is no long an admin. */
 #define ClearAdmin(x)           ClrFlag(x, FLAG_ADMIN)
+#define ClearNetAdmin(x)        ClrFlag(x, FLAG_NETADMIN)
 /** Remove mode +X (XtraOp) flag from client */
 #define ClearXtraOp(x)          ClrFlag(x, FLAG_XTRAOP)
 /** Remove mode +L (No Redirect) flag from client */
@@ -1133,4 +1137,3 @@ extern int client_modify_priv_by_name(struct Client *who, char *priv, int what);
 extern int clear_privs(struct Client *who);
 
 #endif /* INCLUDED_client_h */
-
