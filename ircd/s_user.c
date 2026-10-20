@@ -2514,6 +2514,15 @@ void init_isupport(void)
   add_isupport_i("CHANNELLEN", feature_int(FEAT_CHANNELLEN));
   add_isupport_i("MAXCHANNELLEN", CHANNELLEN);
   add_isupport_s("CHANTYPES", feature_bool(FEAT_LOCAL_CHANNELS) ? "#&" : "#");
+  {
+    int h = feature_bool(FEAT_HALFOPS);
+    int qp = feature_bool(FEAT_OWNERPROTECT);
+    if (qp && h)       { add_isupport_s("PREFIX", "(qaohv)~&@%+"); add_isupport_s("STATUSMSG", "~&@%+"); }
+    else if (qp)        { add_isupport_s("PREFIX", "(qaov)~&@+"); add_isupport_s("STATUSMSG", "~&@+"); }
+    else if (h)          { add_isupport_s("PREFIX", "(ohv)@%+"); add_isupport_s("STATUSMSG", "@%+"); }
+    else                 { add_isupport_s("PREFIX", "(ov)@+"); add_isupport_s("STATUSMSG", "@+"); }
+  }
+  add_isupport_s("BOT", "B");
 
   add_isupport_s("CHANMODES", cmodebuf);
 
@@ -2539,15 +2548,7 @@ void init_isupport(void)
       strcat(extbanbuf, "r");
 
     add_isupport_s("EXTBANS", extbanbuf);
-  {
-    int h = feature_bool(FEAT_HALFOPS);
-    int qp = feature_bool(FEAT_OWNERPROTECT);
-    if (qp && h)       { add_isupport_s("PREFIX", "(qaohv)~&@%+"); add_isupport_s("STATUSMSG", "~&@%+"); }
-    else if (qp)        { add_isupport_s("PREFIX", "(qaov)~&@+"); add_isupport_s("STATUSMSG", "~&@+"); }
-    else if (h)          { add_isupport_s("PREFIX", "(ohv)@%+"); add_isupport_s("STATUSMSG", "@%+"); }
-    else                 { add_isupport_s("PREFIX", "(ov)@+"); add_isupport_s("STATUSMSG", "@+"); }
   }
-  add_isupport_s("BOT", "B");
 
   add_isupport_s("CASEMAPPING", "rfc1459");
   add_isupport_s("NETWORK", feature_str(FEAT_NETWORK));
