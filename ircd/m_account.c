@@ -183,7 +183,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
             "%C :Network Administrator mode (+N) removed — services identity lost. "
             "You retain Server Administrator (+a). Identify to restore +N.",
             acptr);
-          sendto_opmask_butone(0, CMD_NOTICE,
+          sendto_opmask_butone(0, CMD_ACCOUNT,
             "%C lost services identity — demoted from +N to +a", acptr);
         }
 
@@ -228,7 +228,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
           sendcmdto_one(&me, CMD_NOTICE, acptr,
             "%C :Network Administrator mode (+N) activated — services identity verified.",
             acptr);
-          sendto_opmask_butone(0, CMD_NOTICE,
+          sendto_opmask_butone(0, CMD_ACCOUNT,
             "%C identified as %s — promoted to Network Administrator (+N)",
             acptr, parv[3]);
         }
