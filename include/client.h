@@ -1079,6 +1079,7 @@ struct Client {
 #define SNO_NICKCHG     0x20000 /**< Nick change notices */
 #define SNO_AUTH        0x40000 /**< IAuth notices */
 #define SNO_WEBIRC      0x80000 /**< WebIRC notices */
+#define SNO_SACMD       0x800000  /**< SA* command usage */
 
 /** Bitmask of all valid server notice bits. */
 #ifdef DEBUGMODE
@@ -1093,9 +1094,9 @@ struct Client {
 /** Server notice bits enabled by default for normal users. */
 #define SNO_DEFAULT (SNO_NETWORK|SNO_OPERKILL|SNO_GLINE)
 /** Server notice bits enabled by default for IRC operators. */
-#define SNO_OPERDEFAULT (SNO_DEFAULT|SNO_HACK2|SNO_THROTTLE|SNO_OLDSNO)
+#define SNO_OPERDEFAULT (SNO_DEFAULT|SNO_HACK2|SNO_THROTTLE|SNO_OLDSNO|SNO_SACMD)
 /** Server notice bits reserved to IRC operators. */
-#define SNO_OPER (SNO_CONNEXIT|SNO_OLDREALOP|SNO_AUTH)
+#define SNO_OPER (SNO_CONNEXIT|SNO_OLDREALOP|SNO_AUTH|SNO_SACMD)
 /** Noisy server notice bits that cause other bits to be cleared during connect. */
 #define SNO_NOISY (SNO_SERVKILL|SNO_UNAUTH)
 
