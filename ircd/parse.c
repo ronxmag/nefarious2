@@ -741,28 +741,20 @@ struct Message msgtab[] = {
     ""
   },
   {
-    MSG_SVSIDENT,
-    TOK_SVSIDENT,
+    MSG_SAIDENT,
+    TOK_SAIDENT,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svsident, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_saident, mo_saident, m_ignore },
+    "<nick> <newident> - Force a user's ident change. Requires +N (Network Administrator)."
   },
   {
-    MSG_SVSINFO,
-    TOK_SVSINFO,
+    MSG_SAINFO,
+    TOK_SAINFO,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svsinfo, m_ignore, m_ignore },
-    ""
-  },
-  {
-    MSG_SVSQUIT,
-    TOK_SVSQUIT,
-    0, MAXPARA, MFLG_SLOW, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svsquit, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_sainfo, mo_sainfo, m_ignore },
+    "<nick> :<realname> - Force a user's realname change. Requires +N (Network Administrator)."
   },
   {
     MSG_SNO,
@@ -797,52 +789,76 @@ struct Message msgtab[] = {
     ""
   },
   {
-    MSG_SVSNOOP,
-    TOK_SVSNOOP,
+    MSG_SANOOP,
+    TOK_SANOOP,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svsnoop, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_sanoop, mo_sanoop, m_ignore },
+    "<server> <+/-> - Toggle NOOP mode on a server. Requires +N (Network Administrator)."
   },
   {
-    MSG_SVSMODE,
-    TOK_SVSMODE,
+    MSG_SAMODE,
+    TOK_SAMODE,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svsmode, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_samode, mo_samode, m_ignore },
+    "<nick|#channel> <modes> [params] - Force mode changes. Requires +N (Network Administrator)."
   },
   {
-    MSG_SVSNICK,
-    TOK_SVSNICK,
+    MSG_SAJOIN,
+    TOK_SAJOIN,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svsnick, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_sajoin, mo_sajoin, m_ignore },
+    "<nick> <#channel> - Force a user to join channel(s). Requires +N (Network Administrator)."
   },
   {
-    MSG_SVSPART,
-    TOK_SVSPART,
+    MSG_SAPART,
+    TOK_SAPART,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svspart, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_sapart, mo_sapart, m_ignore },
+    "<nick> <#channel> [:<reason>] - Force a user to part channel(s). Requires +N (Network Administrator)."
   },
   {
-    MSG_SVSJOIN,
-    TOK_SVSJOIN,
+    MSG_SACYCLE,
+    TOK_SACYCLE,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_svsjoin, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_sacycle, mo_sacycle, m_ignore },
+    "<nick> <#channel> - Force a user to part and rejoin channel(s). Requires +N (Network Administrator)."
   },
   {
-    MSG_SWHOIS,
-    TOK_SWHOIS,
+    MSG_SANICK,
+    TOK_SANICK,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_swhois, m_ignore, m_ignore },
-    ""
+    { m_ignore, m_not_oper, ms_sanick, mo_sanick, m_ignore },
+    "<nick> <newnick> - Force a user to change their nickname. Requires +N (Network Administrator)."
+  },
+  {
+    MSG_SAQUIT,
+    TOK_SAQUIT,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_ignore, m_not_oper, ms_saquit, mo_saquit, m_ignore },
+    "<nick> [:<reason>] - Force a user to disconnect. Requires +N (Network Administrator)."
+  },
+  {
+    MSG_SATOPIC,
+    TOK_SATOPIC,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_ignore, m_not_oper, m_ignore, mo_satopic, m_ignore },
+    "<#channel> :<topic> - Force a topic change. Requires +N (Network Administrator)."
+  },
+  {
+    MSG_SAWHOIS,
+    TOK_SAWHOIS,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_ignore, m_not_oper, ms_sawhois, mo_sawhois, m_ignore },
+    "<nick> [:<text>] - Set or clear a custom WHOIS line. Requires +N (Network Administrator)."
   },
   {
     MSG_FAKE,
