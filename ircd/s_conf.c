@@ -1165,11 +1165,13 @@ int read_configuration_file(void)
   conf_error = 0;
   feature_unmark(); /* unmark all features for resetting later */
   clear_nameservers(); /* clear previous list of DNS servers */
+  auth_conf_begin();         /* clear the pending IAuth{} */
   if (!init_lexer())
     return 0;
   yyparse();
   deinit_lexer();
   feature_mark(); /* reset unmarked features */
+  auth_conf_apply();      /* spawn (or keep) the last IAuth{} block's program */
   conf_already_read = 1;
   return 1;
 }
@@ -1554,6 +1556,14 @@ int conf_check_server(struct Client *cptr)
    */
   if (!c_conf)
     c_conf = find_conf_byip(lp, &cli_ip(cptr), CONF_SERVER);
+  /*
+   * A rehash during the handshake marks the old Connect block illegal
+   * and leaves it attached only to this link (rehash detaches confs from
+   * registered servers alone); the detach below would free it, and
+   * attach_conf() would then use the freed block.  Treat it as gone.
+   */
+  if (c_conf && IsIllegal(c_conf))
+    c_conf = NULL;
   /*
    * detach all conf lines that got attached by attach_confs()
    */
