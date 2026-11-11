@@ -259,7 +259,13 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    */
   if (IsUnknown(acptr) && MyConnect(acptr)) {
     ServerStats->is_ref++;
-    if (!find_except_conf(acptr, EFLAG_IPCHECK))
+    /* Whether the accept counted it is IsIPChecked(), not an except
+     * looked up now: the block may have gone or come in a REHASH, and
+     * find_except_conf() matches the user name and the resolved host
+     * where the accept matched the address alone.  IPcheck_connect_fail()
+     * asserts the flag (57aad727 made the same change in the exit and
+     * registration paths). */
+    if (IsIPChecked(acptr))
       IPcheck_connect_fail(acptr, 0);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv, 0);
@@ -309,6 +315,27 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     sendto_opmask_butone(0, SNO_OLDSNO, "bad NICK param count for %s from %C",
 			 parv[1], cptr);
     return need_more_params(sptr, "NICK");
+  }
+
+  if (IsServer(sptr))
+  {
+    struct irc_in_addr ip;
+
+    /* SetRemoteNumNick() and findNUser() index client_list[] from the
+     * numnick, and the collision paths below decode the IP into a stack
+     * irc_in_addr: refuse a malformed one before anything uses it. */
+    if (!ValidUserNumNick(parv[parc - 2]))
+      return protocol_violation(cptr, "Malformed numnick %s for %s",
+                                parv[parc - 2], parv[1]);
+    if (base64toip(parv[parc - 3], &ip))
+    {
+      protocol_violation(cptr, "Malformed IP %s for %s (%s)",
+                         parv[parc - 3], parv[1], parv[parc - 2]);
+      ++ServerStats->is_kill;
+      sendcmdto_one(&me, CMD_KILL, cptr, "%s :%s (Malformed IP)",
+                    parv[parc - 2], cli_name(&me));
+      return 0;
+    }
   }
 
   ircd_strncpy(nick, parv[1], NICKLEN + 1);
@@ -390,7 +417,13 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   if (IsUnknown(acptr) && MyConnect(acptr))
   {
     ServerStats->is_ref++;
-    if (!find_except_conf(acptr, EFLAG_IPCHECK))
+    /* Whether the accept counted it is IsIPChecked(), not an except
+     * looked up now: the block may have gone or come in a REHASH, and
+     * find_except_conf() matches the user name and the resolved host
+     * where the accept matched the address alone.  IPcheck_connect_fail()
+     * asserts the flag (57aad727 made the same change in the exit and
+     * registration paths). */
+    if (IsIPChecked(acptr))
       IPcheck_connect_fail(acptr, 0);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv, 0);

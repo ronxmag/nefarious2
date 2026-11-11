@@ -1112,6 +1112,10 @@ static void start_auth_query(struct AuthRequest* auth)
     if (IsUserPort(auth->client))
       sendheader(auth->client, REPORT_FAIL_ID);
     close(fd);
+    /* Nothing is registered (a refused socket_add() leaves the socket
+     * inactive): the teardown must neither close this number again nor
+     * socket_del() it. */
+    s_fd(&auth->socket) = -1;
     return;
   }
 
@@ -1570,6 +1574,9 @@ int iauth_do_spawn(struct IAuth *iauth, int automatic)
     Debug((DEBUG_INFO, "Unable to register IAuth socket: %s", strerror(res)));
     close(s_io[1]);
     close(s_io[0]);
+    /* Refused, so not registered: iauth_disconnect() must neither close
+     * this number again nor socket_del() it. */
+    s_fd(i_socket(iauth)) = -1;
     return res;
   }
 
@@ -1605,9 +1612,11 @@ int iauth_do_spawn(struct IAuth *iauth, int automatic)
     Debug((DEBUG_INFO, "Unable to register IAuth stderr: %s", strerror(res)));
     close(s_err[1]);
     close(s_err[0]);
+    s_fd(i_stderr(iauth)) = -1;   /* refused: as for i_socket above */
     socket_del(i_socket(iauth));
     close(s_io[1]);
     close(s_io[0]);
+    s_fd(i_socket(iauth)) = -1;   /* deleted and closed: not ours now */
     return res;
   }
 
@@ -1669,6 +1678,10 @@ int auth_restart(void)
   /* Need to initialize a new connection. */
   iauthnew = MyCalloc(1, sizeof(*iauthnew));
   msgq_init(i_sendQ(iauthnew));
+  /* No descriptors yet (0 is someone else's): until a spawn registers
+   * them, i_GetConnected() is false and iauth_disconnect() leaves them. */
+  s_fd(i_socket(iauthnew)) = -1;
+  s_fd(i_stderr(iauthnew)) = -1;
   /* Populate iauth's argv array. */
   iauthnew->i_argv = MyCalloc(iauth->i_argc + 1, sizeof(iauthnew->i_argv[0]));
   for (ii = 0; ii < iauth->i_argc; ++ii)
@@ -1720,6 +1733,8 @@ int auth_spawn(int argc, char *argv[])
   /* Need to initialize a new connection. */
   iauth = MyCalloc(1, sizeof(*iauth));
   msgq_init(i_sendQ(iauth));
+  s_fd(i_socket(iauth)) = -1;   /* no descriptors yet: as in auth_restart() */
+  s_fd(i_stderr(iauth)) = -1;
   /* Populate iauth's argv array. */
   iauth->i_argv = MyCalloc(argc + 1, sizeof(iauth->i_argv[0]));
   for (ii = 0; ii < argc; ++ii)
@@ -1731,6 +1746,86 @@ int auth_spawn(int argc, char *argv[])
     return 0;
   IAuthClr(iauth, IAUTH_CLOSING);
   return 1;
+}
+
+/** The IAuth{} block read so far in this configuration pass.  Only one
+ * %IAuth program runs: blocks are collected while the file (and its
+ * includes) is parsed and the LAST one is spawned once, by
+ * auth_conf_apply(), after the whole configuration is read.  Spawning
+ * each block as it was parsed reused the running program for one block,
+ * then replaced the pointer to it for the next -- an orphaned process
+ * that respawned itself when killed and survived every rehash until a
+ * restart. */
+static int conf_iauth_argc;
+static char **conf_iauth_argv;
+static int conf_iauth_toplevel;   /**< recorded block came from ircd.conf itself */
+
+/** Depth of the configuration include stack (ircd_lexer.l); 0 while the
+ * top-level file is being read. */
+extern int include_stack_ptr;
+
+static void auth_conf_free(void)
+{
+  int ii;
+
+  for (ii = 0; ii < conf_iauth_argc; ++ii)
+    MyFree(conf_iauth_argv[ii]);
+  MyFree(conf_iauth_argv);
+  conf_iauth_argv = NULL;
+  conf_iauth_argc = 0;
+  conf_iauth_toplevel = 0;
+}
+
+/** Start a configuration pass: forget any IAuth{} block from the last. */
+void auth_conf_begin(void)
+{
+  auth_conf_free();
+}
+
+/** Record an IAuth{} block.  A block in the top-level configuration file
+ * always wins over one from an included file (e.g. a network-wide synced
+ * include), whatever order the lexer reads them in -- it can lex buffered
+ * text of the top-level file before an include's; among blocks of the same
+ * kind the last one wins.
+ * @param[in] argc Number of program arguments.
+ * @param[in] argv Program arguments (copied).
+ */
+void auth_conf_iauth(int argc, char *argv[])
+{
+  int ii;
+  int toplevel = (include_stack_ptr == 0);
+
+  if (conf_iauth_argv) {
+    if (conf_iauth_toplevel && !toplevel) {
+      log_write(LS_CONFIG, L_WARNING, 0, "IAuth: ignoring an IAuth block "
+                "in an included file; the one in the main file is used");
+      return;
+    }
+    log_write(LS_CONFIG, L_WARNING, 0, "IAuth: more than one IAuth block; "
+              "using %s (%s)", toplevel ? "the one in the main file"
+              : "the last one", argc > 0 ? argv[0] : "");
+    sendto_opmask_butone(0, SNO_OLDSNO, "IAuth: more than one IAuth block; "
+                         "using %s", toplevel ? "the one in the main file"
+                         : "the last one");
+  }
+  auth_conf_free();
+  conf_iauth_toplevel = toplevel;
+  if (argc <= 0)
+    return;
+  conf_iauth_argv = MyCalloc(argc + 1, sizeof(conf_iauth_argv[0]));
+  for (ii = 0; ii < argc; ++ii)
+    DupString(conf_iauth_argv[ii], argv[ii]);
+  conf_iauth_argc = argc;
+}
+
+/** End of a configuration pass: spawn the recorded program, or keep the
+ * running one when its arguments are unchanged.  With no IAuth{} block,
+ * the running program stays marked closing and auth_close_unused() ends it. */
+void auth_conf_apply(void)
+{
+  if (conf_iauth_argv)
+    auth_spawn(conf_iauth_argc, conf_iauth_argv);
+  auth_conf_free();
 }
 
 /** Mark all %IAuth connections as closing. */
@@ -2720,7 +2815,8 @@ static void iauth_parse(struct IAuth *iauth, char *message)
     handler(iauth, NULL, parc, params);
   } else {
     /* Try to find the client associated with the request. */
-    id = strtol(params[0], NULL, 10);
+    /* params[0] is NULL when the line has no parameters. */
+    id = (parc >= 3) ? strtol(params[0], NULL, 10) : 0;
     if (parc < 3)
       sendto_iauth(NULL, "E Missing :Need <id> <ip> <port>");
     else if (id < 0 || id > HighestFd || !(cli = LocalClientArray[id]))
@@ -2779,7 +2875,7 @@ static void iauth_read(struct IAuth *iauth)
   /* Parse each complete line. */
   for (sol = readbuf; (eol = strchr(sol, '\n')) != NULL; sol = eol + 1) {
     *eol = '\0';
-    if (*(eol - 1) == '\r') /* take out carriage returns, too... */
+    if (eol > sol && *(eol - 1) == '\r') /* take out carriage returns, too... */
       *(eol - 1) = '\0';
 
     /* If spammy debug, send the message to opers. */
@@ -2856,7 +2952,7 @@ static void iauth_read_stderr(struct IAuth *iauth)
   /* Send each complete line to SNO_AUTH. */
   for (sol = readbuf; (eol = strchr(sol, '\n')) != NULL; sol = eol + 1) {
     *eol = '\0';
-    if (*(eol - 1) == '\r') /* take out carriage returns, too... */
+    if (eol > sol && *(eol - 1) == '\r') /* take out carriage returns, too... */
       *(eol - 1) = '\0';
     Debug((DEBUG_ERROR, "IAuth error: %s", sol));
     log_write(LS_IAUTH, L_ERROR, 0, "IAuth error: %s", sol);
