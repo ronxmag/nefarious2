@@ -11,7 +11,8 @@
  *
  * BX P has two modes:
  *   - If both old and new numerics are known: transfer memberships
- *     (swap path, used when BX C created the alias Client).
+ *     (swap path, used when BX C created the alias Client).  The new
+ *     client takes the old one's away state, message included.
  *   - If the new numeric is unknown (no BX C support): swap old
  *     client's P10 numeric to the new one in-place.  The client
  *     keeps its nick, channels, and all state — only the internal
@@ -26,17 +27,30 @@
 #include "channel.h"
 #include "ircd.h"
 #include "ircd_log.h"
+#include "ircd_reply.h"
 #include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "s_debug.h"
 #include "msg.h"
 #include "numnicks.h"
 #include "s_misc.h"
+#include "s_user.h"
 #include "send.h"
 #include "struct.h"
 
 #include <assert.h>
 #include <string.h>
+
+/** Whether a BX numeric names a user: a full YYXXX.  findNUser() also
+ * resolves a 3-character numeric, as a one-character server and a
+ * two-character client, which is not the user a BX means.
+ * @param[in] numeric Numeric from the line.
+ * @return Non-zero for a well-formed 5-character user numnick.
+ */
+static int bx_user_numnick(const char *numeric)
+{
+  return strlen(numeric) == 5 && ValidUserNumNick(numeric);
+}
 
 /** Handle a BX (Bouncer Transfer) message from a server.
  *
@@ -77,6 +91,13 @@ int ms_bouncer_transfer(struct Client *cptr, struct Client *sptr,
     if (parc < 6)
       return 0;
 
+    /* A shorter numeric would resolve to another user, and the swap
+     * below would file the client under a numnick of the wrong width:
+     * such a line is neither acted on nor passed on. */
+    if (!bx_user_numnick(parv[2]) || !bx_user_numnick(parv[3]))
+      return protocol_violation(sptr, "BX P with a malformed numeric "
+                                "(%s %s)", parv[2], parv[3]);
+
     old_client = findNUser(parv[2]);
     new_client = findNUser(parv[3]);
     /* parv[4] = sessid (not used by legacy) */
@@ -86,6 +107,11 @@ int ms_bouncer_transfer(struct Client *cptr, struct Client *sptr,
       goto relay;
 
     if (new_client && IsUser(new_client)) {
+      /* One client named as both old and new: nothing to transfer.  The
+       * transfer below would take it out of its channels and exit it. */
+      if (new_client == old_client)
+        goto relay;
+
       /* Both clients exist: transfer channel memberships from old to new. */
       for (memb = cli_user(old_client)->channel; memb; memb = next) {
         struct Channel *chptr = memb->channel;
@@ -107,6 +133,21 @@ int ms_bouncer_transfer(struct Client *cptr, struct Client *sptr,
       if (ircd_strcmp(cli_name(new_client), nick) != 0) {
         Debug((DEBUG_DEBUG, "BX P: nick mismatch (swap) — local '%s' vs wire '%s', keeping local",
                cli_name(new_client), nick));
+      }
+
+      /* The new client shows what the old one showed, as a client the
+       * numeric swap below renumbers keeps its own: the old client's
+       * away message if it is away, no away if it is not.  Every server
+       * that knows both clients applies this BX P itself, and the
+       * transfer shows local clients nothing: no AWAY is sent.  Copied
+       * out first: user_set_away() frees the new client's message, which
+       * is the old one's when they are one client. */
+      {
+        char away[AWAYLEN + 1];
+
+        ircd_strncpy(away, cli_user(old_client)->away ?
+                     cli_user(old_client)->away : "", sizeof(away));
+        user_set_away(cli_user(new_client), away);
       }
 
       SetFlag(old_client, FLAG_KILLED);

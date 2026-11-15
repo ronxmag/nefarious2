@@ -251,6 +251,43 @@ int ValidUserNumNick(const char* yxx)
   return 1;
 }
 
+/** Test whether a numnick names a user of @a server: well-formed
+ * (ValidUserNumNick()), starting with the server's own numnick, and as
+ * wide as the server's numeric was announced (3 for a one-character
+ * server numnick, 5 for a two-character one).  SetRemoteNumNick() files a
+ * user under its server by the client part alone, and the user is
+ * announced onward as the server's numnick and that part: any other
+ * numnick is filed, and relayed, as a different one.
+ * @param[in] server %Server introducing the user.
+ * @param[in] yxx Candidate numnick.
+ * @return Non-zero if \a yxx names a user of \a server.
+ */
+int ValidUserNumNickFor(const struct Client* server, const char* yxx)
+{
+  size_t slen = strlen(cli_yxx(server));
+
+  if (!ValidUserNumNick(yxx) || (slen != 1 && slen != 2))
+    return 0;
+  if (strlen(yxx) != (slen == 1 ? 3 : 5))
+    return 0;
+  return 0 == strncmp(yxx, cli_yxx(server), slen);
+}
+
+/** Test whether a server's numeric field is well-formed: its numnick and
+ * capacity, 3 (Y + XX) or 5 (YY + XXX) characters of the numnick
+ * alphabet, the two forms SetServerYXX() reads.  Check it on every
+ * SERVER a peer sends: any other length is filed under another numeric
+ * (or read past its end).
+ * @param[in] yyxxx Candidate numeric field.
+ * @return Non-zero if \a yyxxx is well-formed.
+ */
+int ValidServerNumNick(const char* yyxxx)
+{
+  /* The same shapes as a user numnick: server and capacity are a
+   * numnick's server and client parts. */
+  return ValidUserNumNick(yyxxx);
+}
+
 /** Remove a client from a server's user array.
  * @param[in] server %Server that owns the user to remove.
  * @param[in] yxx Numnick of client to remove.
@@ -482,13 +519,15 @@ const char* iptobase64(char* buf, const struct irc_in_addr* addr, unsigned int c
 {
   if (irc_in_addr_is_ipv4(addr)) {
     assert(count >= 6);
-    inttobase64(buf, (ntohs(addr->in6_16[6]) << 16) | ntohs(addr->in6_16[7]), 6);
+    /* The high group is shifted as unsigned: ntohs() promotes to int,
+     * and a group of 0x8000 or more shifted by 16 overflows it. */
+    inttobase64(buf, ((unsigned int)ntohs(addr->in6_16[6]) << 16) | ntohs(addr->in6_16[7]), 6);
   } else if (!v6_ok) {
     assert(count >= 6);
     if (addr->in6_16[0] == htons(0x2002))
-        inttobase64(buf, (ntohs(addr->in6_16[1]) << 16) | ntohs(addr->in6_16[2]), 6);
+        inttobase64(buf, ((unsigned int)ntohs(addr->in6_16[1]) << 16) | ntohs(addr->in6_16[2]), 6);
     else if ((addr->in6_16[0] == htons(0x2001)) && (addr->in6_16[1] == 0))
-        inttobase64(buf, (ntohs(addr->in6_16[6] ^ 0xFFFF) << 16) | ntohs(addr->in6_16[7] ^ 0xFFFF), 6);
+        inttobase64(buf, ((unsigned int)ntohs(addr->in6_16[6] ^ 0xFFFF) << 16) | ntohs(addr->in6_16[7] ^ 0xFFFF), 6);
     else
         strcpy(buf, "AAAAAA");
   } else {

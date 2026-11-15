@@ -61,6 +61,7 @@ extern void auth_send_exit(struct Client *cptr);
 extern void auth_send_xreply(struct Client *sptr, const char *routing, const char *reply);
 extern void auth_mark_closing(void);
 extern void auth_close_unused(void);
+extern void auth_conf_check_only(void);
 extern void auth_conf_begin(void);
 extern void auth_conf_iauth(int argc, char *argv[]);
 extern void auth_conf_apply(void);
@@ -72,6 +73,7 @@ extern int auth_iauth_handles_sasl(void);
 extern int auth_send_sasl_start(struct Client *cptr, const char *mechanism, const char *certfp);
 extern int auth_send_sasl_host(struct Client *cptr, const char *username, const char *host, const char *ip);
 extern int auth_send_sasl_data(struct Client *cptr, const char *data);
+extern int auth_iauth_sasl_fail(struct Client *cptr);
 
 #endif /* INCLUDED_s_auth_h */
 

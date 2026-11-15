@@ -1905,4 +1905,5 @@ exceptlistdelay: LISTDELAY '=' YES ';'
 include: INCLUDE QSTRING ';'
 {
   init_lexer_file($2);
+  MyFree($2);
 }

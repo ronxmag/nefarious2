@@ -272,11 +272,40 @@ int include_stack_ptr = 0;
 #undef YY_INPUT
 #define YY_INPUT(buf, res, size) res = (fbgets(buf, size, lexer_input) ? strlen(buf) : 0)
 
+/** The configuration file lexer_open_config() opened for the next
+ * init_lexer() to read, or NULL. */
+static FBFILE *lexer_opened;
+
+/** Close a configuration file lexer_open_config() opened that is not to
+ * be read after all. */
+void lexer_close_config(void)
+{
+  if (lexer_opened != NULL)
+  {
+    fbclose(lexer_opened);
+    lexer_opened = NULL;
+  }
+}
+
+/** Open the configuration file now, for the next init_lexer() to read.
+ * A rehash opens it before it discards anything of the running
+ * configuration: a file that cannot be opened stops the rehash there, and
+ * the file it checked is the one that is parsed.
+ * @return The open file, or NULL (errno set) if it cannot be opened.
+ */
+FBFILE *lexer_open_config(void)
+{
+  lexer_close_config();
+  lexer_opened = fbopen(configfile, "r");
+  return lexer_opened;
+}
+
 int
 init_lexer(void)
 {
   include_stack_ptr = 0;
-  lexer_input = fbopen(configfile, "r");
+  lexer_input = lexer_opened ? lexer_opened : fbopen(configfile, "r");
+  lexer_opened = NULL;
   if (lexer_input == NULL)
   {
 #ifdef YY_FATAL_ERROR
@@ -331,9 +360,13 @@ init_lexer_file(char* file)
     lexer_input = include_stack[--include_stack_ptr].lexer_input;
     return 0;
   }
-#ifdef YY_NEW_FILE
-  YY_NEW_FILE;
-#endif
+  /* Read the included file through a buffer of its own.  The rest of the
+   * including file's current line -- whatever follows the include
+   * directive -- stays in the including file's buffer and is read when the
+   * included file ends (next_lexer_file()), so the configuration is read
+   * in the order it is written.  (Restarting the current buffer here
+   * discarded that text without a word.) */
+  yypush_buffer_state(yy_create_buffer(NULL, YY_BUF_SIZE));
   lineno = 1;
   linefile = strdup(file);
   return 1;
@@ -354,6 +387,9 @@ int next_lexer_file(void)
   lineno = include_stack[include_stack_ptr].lineno;
   linefile = include_stack[include_stack_ptr].linefile;
   lexer_input = include_stack[include_stack_ptr].lexer_input;
+  /* Back to the including file's buffer, where reading resumes right after
+   * the include directive (yywrap() returning 0 after a buffer switch). */
+  yypop_buffer_state();
 
   return 0;
 }
