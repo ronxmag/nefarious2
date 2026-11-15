@@ -608,53 +608,24 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	  if (!(acptr = findNUser(nick)) || cli_from(acptr) != cptr)
 	    continue; /* ignore this client */
 
-	  /* Build nick buffer */
-	  nickstr[nickpos] = nickpos ? ',' : ' '; /* first char */
-          nickstro[nickposo] = nickposo ? ',' : ' '; /* first char */
-	  nickpos++;
-          nickposo++;
+	  /* Relay the member.  One that does not fit the line goes on the
+	   * next, and states its mode there: a receiver reads each line's
+	   * mode fields from scratch. */
+	  {
+	    char ent[BURST_ENTRY_LEN], ento[BURST_ENTRY_LEN];
+	    int entry_mode = last_mode, entry_oplevel = last_oplevel;
 
-	  for (ptr = nick; *ptr; ptr++) { /* store nick */
-	    nickstr[nickpos++] = *ptr;
-            nickstro[nickposo++] = *ptr;
-          }
-
-	  if (current_mode != last_mode) { /* if mode changed... */
-	    last_mode = current_mode;
-	    last_oplevel = oplevel;
-
-	    nickstr[nickpos++] = ':'; /* add a specifier */
-            nickstro[nickposo++] = ':'; /* add a specifier */
-            if (current_mode & CHFL_OWNER) {
-              nickstr[nickpos++] = 'q';
-              nickstro[nickposo++] = 'q';
-            }
-            if (current_mode & CHFL_PROTECT) {
-              nickstr[nickpos++] = 'a';
-              nickstro[nickposo++] = 'a';
-            }
-	    if (current_mode & CHFL_CHANOP)
-            {
-              if (oplevel != MAXOPLEVEL)
-	        nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel);
-              else
-                nickstr[nickpos++] = 'o';
-              nickstro[nickposo++] = 'o';
-            }
-            if (current_mode & CHFL_HALFOP) {
-              nickstr[nickpos++] = 'h';
-              nickstro[nickposo++] = 'h';
-            }
-	    if (current_mode & CHFL_VOICE) {
-	      nickstr[nickpos++] = 'v';
-              nickstro[nickposo++] = 'v';
-            }
-	  } else if (current_mode & CHFL_CHANOP && oplevel != last_oplevel) { /* if just op level changed... */
-	    nickstr[nickpos++] = ':'; /* add a specifier */
-            nickstro[nickposo++] = ':'; /* add a specifier */
-	    nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel - last_oplevel);
-            nickstro[nickposo++] = 'o';
-            last_oplevel = oplevel;
+	    burst_member_entry(ent, ento, !relay.nickpos, nick, current_mode,
+	                       oplevel, &entry_mode, &entry_oplevel);
+	    if (burst_relay_need(&relay, IRCD_MAX(strlen(ent), strlen(ento)))) {
+	      entry_mode = base_mode;
+	      entry_oplevel = 0;
+	      burst_member_entry(ent, ento, 1, nick, current_mode, oplevel,
+	                         &entry_mode, &entry_oplevel);
+	    }
+	    burst_relay_member(&relay, ent, ento);
+	    last_mode = entry_mode;
+	    last_oplevel = entry_oplevel;
 	  }
 
 	  if (!(member = find_member_link(chptr, acptr)))
