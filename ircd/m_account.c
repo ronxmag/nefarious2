@@ -119,7 +119,12 @@ static struct Client *decode_auth_id(const char *id)
   cookie = atoi(cookiestr + 1);
   Debug((DEBUG_DEBUG, "ACCOUNT auth id fd=%u cookie=%u", fd, cookie));
 
-  if (!(cptr = LocalClientArray[fd]) || !cli_loc(cptr) || cli_loc(cptr)->cookie != cookie)
+  /* The fd is whatever the peer sent: it indexes LocalClientArray only
+   * inside the array (fd is unsigned, so a negative number fails the
+   * same test).  A cookie is never 0 (auth_do_loc()); 0 is what a client
+   * has between PASS and its request going out, so it matches nobody. */
+  if (!cookie || fd >= MAXCONNECTIONS || !(cptr = LocalClientArray[fd])
+      || !cli_loc(cptr) || cli_loc(cptr)->cookie != cookie)
     return NULL;
   return cptr;
 }
@@ -164,6 +169,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
         assert(0 != cli_user(acptr)->account[0]);
 
         ClearAccount(acptr);
+        cli_user(acptr)->kc_id[0] = '\0';
         ircd_strncpy(cli_user(acptr)->account, "", ACCOUNTLEN + 1);
 
         sendcmdto_common_channels_capab_butone(acptr, CMD_ACCOUNT, acptr, CAP_ACCNOTIFY, CAP_NONE,
@@ -200,10 +206,26 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
                  "timestamp %Tu", parv[3], cli_user(acptr)->acc_create));
         }
 
+        /* Fifth parameter: the account id, carried through as announced
+         * (this server does not interpret it; services behind it do).
+         * Anything else in that slot is not an id and leaves it unknown. */
+        if (parc > 5 && account_id_valid(parv[5])) {
+          ircd_strncpy(cli_user(acptr)->kc_id, parv[5], sizeof(cli_user(acptr)->kc_id));
+          Debug((DEBUG_DEBUG, "Received account id %s for account \"%s\"",
+                 cli_user(acptr)->kc_id, parv[3]));
+        } else
+          cli_user(acptr)->kc_id[0] = '\0';
+
         sendcmdto_common_channels_capab_butone(acptr, CMD_ACCOUNT, acptr, CAP_ACCNOTIFY, CAP_NONE,
                                                "%s", cli_user(acptr)->account);
 
-        if (parc > 4) {
+        if (cli_user(acptr)->kc_id[0]) {
+          /* The timestamp slot stays (as received, "0" when there was
+           * none) so the id is always the fifth parameter downstream. */
+          sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %c %s %s %s",
+                                acptr, type, parv[3], parc > 4 ? parv[4] : "0",
+                                cli_user(acptr)->kc_id);
+        } else if (parc > 4) {
           sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %c %s %s",
                                 acptr, type, parv[3], parv[4]);
         } else {
@@ -287,10 +309,12 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
 
       MyFree(cli_loc(acptr));
 
+      /* Let registration go on.  Its result says whether acptr survived
+       * it (CPTR_KILLED when registration exited the client); cptr is the
+       * server link, so it must not be returned from here. */
       if (cli_auth(acptr))
-        return auth_set_account(cli_auth(acptr), cli_user(acptr)->account);
-      else
-        return 0;
+        auth_set_account(cli_auth(acptr), cli_user(acptr)->account);
+      return 0;
     } else {
       return protocol_violation(cptr, "ACCOUNT sub-type '%s' not implemented",
                                 parv[2]);
