@@ -316,6 +316,11 @@ void add_listener(int port, const char* vhost_ip, const char* mask,
       && !ircd_aton(&vaddr, vhost_ip))
       return;
 
+  /* A configuration check (ircd -k) reads the Port block but opens no
+   * socket: it may run beside the live server, whose ports are bound. */
+  if (conf_is_check_only())
+    return;
+
   listener = find_listener(port, &vaddr);
   if (!listener)
   {
@@ -361,9 +366,17 @@ void add_listener(int port, const char* vhost_ip, const char* mask,
     listener->fd_v4 = -1;
   }
 
-  if (!okay)
-    free_listener(listener);
-  else if (new_listener) {
+  if (!okay) {
+    /* No socket could be opened.  A listener this Port block created is
+     * not linked anywhere yet; one an earlier configuration made is on
+     * ListenerPollList and may still be held by clients, so it is only
+     * marked inactive: close_listeners() or its last release_listener()
+     * closes it. */
+    if (new_listener)
+      free_listener(listener);
+    else
+      FlagClr(&listener->flags, LISTEN_ACTIVE);
+  } else if (new_listener) {
     listener->next   = ListenerPollList;
     ListenerPollList = listener;
   }
