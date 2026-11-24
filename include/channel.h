@@ -110,6 +110,8 @@ struct Client;
 #define MBFL_EXCEPTED_QUIET     0x0200 /**< Channel member is ban excepted */
 #define MBFL_EXCEPTVALID_NICK   0x0400 /**< MBFL_EXCEPTED_NICK is valid */
 #define MBFL_EXCEPTED_NICK      0x0800 /**< Channel member is ban excepted */
+#define MBFL_BANCACHE_OPER      0x1000 /**< The valid verdicts were found while
+                                        *   the user was an oper */
 
 /* Channel Visibility macros */
 
@@ -511,6 +513,7 @@ int number_of_zombies(struct Channel *chptr);
 extern const char* find_no_nickchange_channel(struct Client* cptr);
 extern struct Membership* find_channel_member(struct Client* cptr, struct Channel* chptr);
 extern int member_can_send_to_channel(struct Membership* member, int reveal);
+extern void member_ban_cache_clear(struct Client *cptr);
 extern int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int reveal);
 
 extern void remove_user_from_channel(struct Client *sptr, struct Channel *chptr);
@@ -540,6 +543,7 @@ extern void modebuf_init(struct ModeBuf *mbuf, struct Client *source,
 			 struct Client *connect, struct Channel *chan,
 			 unsigned int dest);
 extern void modebuf_mode(struct ModeBuf *mbuf, unsigned int mode);
+extern void modebuf_exmode(struct ModeBuf *mbuf, unsigned int mode);
 extern void modebuf_mode_uint(struct ModeBuf *mbuf, unsigned int mode,
 			      unsigned int uint);
 extern void modebuf_mode_string(struct ModeBuf *mbuf, unsigned int mode,

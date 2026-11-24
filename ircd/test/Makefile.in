@@ -7,28 +7,38 @@ LDFLAGS  =
 CC = @CC@
 
 TESTPROGS = \
+	ban_cache_t \
 	burst_relay_t \
+	burst_modes_t \
 	burst_netride_t \
+	burst_exmode_t \
 	ircd_chattr_t \
 	iauth_held_t \
 	iauth_respawn_t \
+	conf_precheck_t \
 	ircd_in_addr_t \
 	ircd_match_t \
 	ircd_string_t \
 	services_reply_t \
-	parse_line_t
+	parse_line_t \
+	ssl_io_t
 
 DEP_SRC = \
+	ban_cache_t.c \
 	burst_relay_t.c \
+	burst_modes_t.c \
 	burst_netride_t.c \
+	burst_exmode_t.c \
 	ircd_chattr_t.c \
 	iauth_held_t.c \
 	iauth_respawn_t.c \
+	conf_precheck_t.c \
 	ircd_in_addr_t.c \
 	ircd_match_t.c \
 	ircd_string_t.c \
 	services_reply_t.c \
 	parse_line_t.c \
+	ssl_io_t.c \
 	test_stub.c
 
 all: ${TESTPROGS}
@@ -47,12 +57,40 @@ depend: ${DEP_SRC}
 
 install:
 
+# A member's cached ban verdicts follow what its bans match: the real
+# predicates in channel.c, and the real ms_account(), ms_svsinfo() and
+# add_mark() that change what they match.  Each is compiled with
+# -ffunction-sections and linked with --gc-sections, so only what they
+# reach is kept; the rest of the server is stubbed in the test.
+BAN_CACHE_T_REAL = bc_m_account.o bc_m_svsinfo.o bc_s_conf.o
+bc_m_account.o: ../m_account.c
+bc_m_svsinfo.o: ../m_svsinfo.c
+bc_s_conf.o: ../s_conf.c
+${BAN_CACHE_T_REAL}:
+	${CC} ${CFLAGS} -ffunction-sections -fdata-sections ${CPPFLAGS} -c -o $@ $<
+ban_cache_t.o: ${srcdir}/ban_cache_t.c ../channel.c
+	${CC} ${CFLAGS} -ffunction-sections -fdata-sections ${CPPFLAGS} -c -o $@ ${srcdir}/ban_cache_t.c
+BAN_CACHE_T_OBJS = ban_cache_t.o ${BAN_CACHE_T_REAL} test_stub.o ../ircd_alloc.o ../ircd_snprintf.o ../ircd_string.o ../match.o
+ban_cache_t: $(BAN_CACHE_T_OBJS)
+	${CC} -o $@ $(LDFLAGS) -Wl,--gc-sections $(BAN_CACHE_T_OBJS)
 BURST_RELAY_T_OBJS = burst_relay_t.o test_stub.o ../m_burst.o ../ircd_alloc.o ../ircd_snprintf.o ../ircd_string.o ../match.o
 burst_relay_t: $(BURST_RELAY_T_OBJS)
 	${CC} -o $@ $(LDFLAGS) $(BURST_RELAY_T_OBJS)
+# The modes a relayed BURST carries: the real modebuf_extract() and
+# mode_parse().  channel.c is included, compiled with -ffunction-sections
+# and linked with --gc-sections, so only what they reach is kept; the rest
+# of the server they reach is stubbed in the test.
+BURST_MODES_T_OBJS = burst_modes_t.o test_stub.o ../ircd_alloc.o ../ircd_snprintf.o ../ircd_string.o ../match.o
+burst_modes_t.o: ${srcdir}/burst_modes_t.c ../channel.c
+	${CC} ${CFLAGS} -ffunction-sections -fdata-sections ${CPPFLAGS} -c -o $@ ${srcdir}/burst_modes_t.c
+burst_modes_t: $(BURST_MODES_T_OBJS)
+	${CC} -o $@ $(LDFLAGS) -Wl,--gc-sections $(BURST_MODES_T_OBJS)
 BURST_NETRIDE_T_OBJS = burst_netride_t.o test_stub.o ../m_burst.o ../ircd_alloc.o ../ircd_snprintf.o ../ircd_string.o ../match.o
 burst_netride_t: $(BURST_NETRIDE_T_OBJS)
 	${CC} -o $@ $(LDFLAGS) $(BURST_NETRIDE_T_OBJS)
+BURST_EXMODE_T_OBJS = burst_exmode_t.o test_stub.o ../m_burst.o ../m_join.o ../ircd_alloc.o ../ircd_snprintf.o ../ircd_string.o ../match.o
+burst_exmode_t: $(BURST_EXMODE_T_OBJS)
+	${CC} -o $@ $(LDFLAGS) $(BURST_EXMODE_T_OBJS)
 
 IRCD_CHATTR_T_OBJS = ircd_chattr_t.o test_stub.o ../ircd_string.o
 ircd_chattr_t: $(IRCD_CHATTR_T_OBJS)
@@ -65,6 +103,12 @@ iauth_held_t: $(IAUTH_HELD_T_OBJS)
 IAUTH_RESPAWN_T_OBJS = iauth_respawn_t.o
 iauth_respawn_t: $(IAUTH_RESPAWN_T_OBJS)
 	${CC} -o $@ $(LDFLAGS) $(IAUTH_RESPAWN_T_OBJS)
+
+# The REHASH precheck (a fresh "ircd -k"); a shell script stands in for
+# the binary.  Standalone.
+CONF_PRECHECK_T_OBJS = conf_precheck_t.o ../conf_precheck.o
+conf_precheck_t: $(CONF_PRECHECK_T_OBJS)
+	${CC} -o $@ $(LDFLAGS) $(CONF_PRECHECK_T_OBJS)
 
 IRCD_IN_ADDR_T_OBJS = ircd_in_addr_t.o test_stub.o ../ircd_alloc.o ../ircd_string.o ../match.o ../numnicks.o
 ircd_in_addr_t: $(IRCD_IN_ADDR_T_OBJS)
@@ -94,6 +138,18 @@ handler_stubs.c: ${top_srcdir}/include/handlers.h
 PARSE_LINE_T_OBJS = parse_line_t.o handler_stubs.o ../parse.o ../ircd_string.o
 parse_line_t: $(PARSE_LINE_T_OBJS)
 	${CC} -o $@ $(LDFLAGS) $(PARSE_LINE_T_OBJS)
+
+# The OpenSSL error queue around TLS I/O: the real ssl_connect(),
+# ssl_accept(), ssl_sendv(), ssl_recv() and teardown over a socketpair.
+# ssl.c is included, compiled with -ffunction-sections and linked with
+# --gc-sections, so only what they reach is kept; the rest of the server
+# they reach is stubbed in the test.  It links the server's libraries
+# (OpenSSL, when the server is built with it).
+SSL_IO_T_OBJS = ssl_io_t.o test_stub.o ../ircd_string.o
+ssl_io_t.o: ${srcdir}/ssl_io_t.c ../ssl.c
+	${CC} ${CFLAGS} -ffunction-sections -fdata-sections ${CPPFLAGS} -c -o $@ ${srcdir}/ssl_io_t.c
+ssl_io_t: $(SSL_IO_T_OBJS)
+	${CC} -o $@ $(LDFLAGS) -Wl,--gc-sections $(SSL_IO_T_OBJS) @LIBS@
 
 .c.o:
 	${CC} ${CFLAGS} ${CPPFLAGS} -c $< -o $@
@@ -130,6 +186,17 @@ burst_netride_t.o: burst_netride_t.c ../../config.h \
   ../../include/ircd_string.h ../../include/ircd_chattr.h \
   ../../include/match.h ../../include/numnicks.h ../../include/send.h \
   ../../include/struct.h
+burst_exmode_t.o: burst_exmode_t.c ../../config.h \
+  ../../include/channel.h ../../include/ircd_defs.h ../../include/res.h \
+  ../../include/client.h ../../include/dbuf.h ../../include/msgq.h \
+  ../../include/ircd_events.h ../../include/ssl.h \
+  ../../include/ircd_osdep.h ../../include/ircd_handler.h \
+  ../../include/flagset.h ../../include/capab.h ../../include/handlers.h \
+  ../../include/hash.h ../../include/ircd.h ../../include/struct.h \
+  ../../include/ircd_features.h ../../include/ircd_reply.h \
+  ../../include/ircd_snprintf.h ../../include/ircd_string.h \
+  ../../include/ircd_chattr.h ../../include/match.h ../../include/msg.h \
+  ../../include/numnicks.h ../../include/send.h ../../include/struct.h
 ircd_chattr_t.o: ircd_chattr_t.c ../../include/ircd_chattr.h
 iauth_held_t.o: iauth_held_t.c ../../include/iauth_held.h
 iauth_respawn_t.o: iauth_respawn_t.c ../../include/iauth_respawn.h

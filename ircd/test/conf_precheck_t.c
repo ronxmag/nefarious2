@@ -1,0 +1,490 @@
+/*
+ * IRC - Internet Relay Chat, ircd/test/conf_precheck_t.c
+ *
+ * The REHASH precheck: a fresh "ircd -k" run on the configuration, before
+ * the running one is discarded (conf_precheck_run()).  The binary is a
+ * shell script here, which stands in for each way the check can end.
+ */
+#include "config.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include "conf_precheck.h"
+
+static int checks, failures;
+
+static void check(int ok, const char *what, const char *file, int line)
+{
+  checks++;
+  if (!ok) {
+    failures++;
+    printf("FAILED %s:%d: %s\n", file, line, what);
+  }
+}
+#define assert_true(e) check(!!(e), #e, __FILE__, __LINE__)
+#define assert_non_null(e) check((e) != NULL, #e, __FILE__, __LINE__)
+#define assert_int_equal(a, b) check((long)(a) == (long)(b), #a " == " #b, __FILE__, __LINE__)
+#define assert_string_equal(a, b) check(0 == strcmp((a), (b)), #a " eq " #b, __FILE__, __LINE__)
+#define assert_ptr_equal(a, b) check((const void *)(a) == (const void *)(b), #a " is " #b, __FILE__, __LINE__)
+
+static char script[64];
+
+/* Write @a body as an executable /bin/sh script. */
+static void make_script(const char *body)
+{
+  FILE *f;
+
+  snprintf(script, sizeof(script), "/tmp/conf_precheck_%ld.sh", (long)getpid());
+  f = fopen(script, "w");
+  assert_non_null(f);
+  fprintf(f, "#!/bin/sh\n%s\n", body);
+  fclose(f);
+  assert_int_equal(chmod(script, 0700), 0);
+}
+
+static void teardown(void)
+{
+  unlink(script);
+}
+
+static long now_ms(void)
+{
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec * 1000L + tv.tv_usec / 1000;
+}
+
+/* "ircd -k" with errors exits 7 (init_conf() failed): the errors are what
+ * it printed. */
+static void errors_are_reported(void)
+{
+  char out[512];
+
+  make_script("echo 'Config parse error in file ircd.conf on line 3: syntax error' >&2\n"
+              "exit 7");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "ircd.conf", 5000,
+                                     out, sizeof(out)),
+                   CONF_PRECHECK_ERRORS);
+  assert_non_null(strstr(out, "on line 3: syntax error"));
+}
+
+static void a_clean_file_passes(void)
+{
+  char out[512];
+
+  make_script("echo 'Configuration file ircd.conf checked okay.' >&2\nexit 0");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "ircd.conf", 5000,
+                                     out, sizeof(out)),
+                   CONF_PRECHECK_OK);
+}
+
+/* The binary is run as "<exe> -k -d <dpath> -f <conf>". */
+static void the_arguments(void)
+{
+  char out[512];
+
+  make_script("echo \"$#:$1:$2:$3:$4:$5\"");
+  assert_int_equal(conf_precheck_run(script, "/some/dir", "x.conf", 5000,
+                                     out, sizeof(out)),
+                   CONF_PRECHECK_OK);
+  assert_string_equal(out, "5:-k:-d:/some/dir:-f:x.conf\n");
+}
+
+/* Any other end is a failure (the rehash is abandoned), and a last line
+ * says how it ended. */
+static void other_ends_fail(void)
+{
+  char out[512];
+
+  make_script("exit 4");          /* The check could not read its config file. */
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_non_null(strstr(out, "it exited with status 4"));
+  make_script("kill -KILL $$");   /* the OOM killer, or an operator */
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_non_null(strstr(out, "it died of signal 9"));
+  assert_int_equal(conf_precheck_run("/nonexistent/ircd", "/tmp", "c", 5000,
+                                     out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_non_null(strstr(out, "it could not be run (/nonexistent/ircd"));
+}
+
+/* A process limit: fork() fails, and the reason is given. */
+static void a_failed_fork_says_why(void)
+{
+  char out[512];
+  struct rlimit old, none = { 0, 0 };
+
+  if (getuid() == 0) {
+    printf("skipped a_failed_fork_says_why: root is not held to RLIMIT_NPROC\n");
+    return;
+  }
+  make_script("exit 0");
+  assert_int_equal(getrlimit(RLIMIT_NPROC, &old), 0);
+  none.rlim_max = old.rlim_max;
+  assert_int_equal(setrlimit(RLIMIT_NPROC, &none), 0);
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out,
+                                     sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  setrlimit(RLIMIT_NPROC, &old);
+  assert_non_null(strstr(out, "it could not be started: fork(): "));
+}
+
+/* Closing the server's descriptors does not cost one close() per number
+ * up to a large hard limit. */
+static void a_large_descriptor_limit_is_quick(void)
+{
+  char out[512];
+  struct rlimit old, big;
+  long t0;
+
+  assert_int_equal(getrlimit(RLIMIT_NOFILE, &old), 0);
+  /* 524288, as on the review's server, where it can be raised to (as
+   * root); else as high as the hard limit goes. */
+  big.rlim_cur = big.rlim_max = 524288;
+  if (setrlimit(RLIMIT_NOFILE, &big) != 0) {
+    big = old;
+    big.rlim_cur = old.rlim_max;
+    if (big.rlim_cur == RLIM_INFINITY || big.rlim_cur > 1048576)
+      big.rlim_cur = 1048576;
+    if (big.rlim_cur < 65536 || setrlimit(RLIMIT_NOFILE, &big) != 0) {
+      printf("skipped a_large_descriptor_limit_is_quick: hard limit too low\n");
+      return;
+    }
+  }
+  make_script("exit 0");
+  t0 = now_ms();
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out,
+                                     sizeof(out)),
+                   CONF_PRECHECK_OK);
+  t0 = now_ms() - t0;
+  setrlimit(RLIMIT_NOFILE, &old);
+  assert_true(t0 < 150);
+}
+
+/* A check that dies of a signal fails.  Its output is kept, and a last
+ * line says how it ended. */
+static void a_crash_fails(void)
+{
+  char out[512], small[24];
+
+  make_script("echo 'reading ircd.conf'; kill -SEGV $$");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_non_null(strstr(out, "reading ircd.conf\nit died of signal 11"));
+  make_script("kill -ABRT $$");   /* an assert() */
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  /* No room: the note goes over the tail of the output. */
+  make_script("echo 0123456789012345678901234567890123456789; exit 4");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, small,
+                                     sizeof(small)),
+                   CONF_PRECHECK_FAILED);
+  assert_int_equal(strlen(small), sizeof(small) - 1);
+  assert_non_null(strstr(small, "status 4"));
+  /* Room for the note: it starts a line of its own over the tail. */
+  make_script("echo 01234567890123456789012345678901234567890123456789; exit 4");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, 40),
+                   CONF_PRECHECK_FAILED);
+  assert_int_equal(strlen(out), 39);
+  assert_non_null(strstr(out, "\nit exited with status 4\n"));
+  make_script("kill -TERM $$");   /* a stop */
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_non_null(strstr(out, "it died of signal 15"));
+}
+
+/* SIGCHLD ignored (the kqueue engine): the check is still waited for,
+ * and the disposition is restored. */
+static void sigchld_ignored_is_still_waited_for(void)
+{
+  char out[512];
+  struct sigaction ign, now;
+
+  memset(&ign, 0, sizeof(ign));
+  ign.sa_handler = SIG_IGN;
+  sigemptyset(&ign.sa_mask);
+  assert_int_equal(sigaction(SIGCHLD, &ign, NULL), 0);
+  make_script("echo 'on line 3: syntax error'; exit 7");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_ERRORS);
+  assert_int_equal(sigaction(SIGCHLD, NULL, &now), 0);
+  assert_true(now.sa_handler == SIG_IGN);
+  ign.sa_handler = SIG_DFL;
+  sigaction(SIGCHLD, &ign, NULL);
+}
+
+/* A check that does not end in time is killed and reaped, and fails. */
+static void a_hung_check_is_killed(void)
+{
+  char out[512];
+  long t0;
+  int st;
+
+  make_script("exec sleep 30");
+  t0 = now_ms();
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 300, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_true(now_ms() - t0 < 3000);
+  assert_non_null(strstr(out, "it did not finish in 300 ms"));
+  assert_int_equal(waitpid(-1, &st, WNOHANG), -1);   /* nothing left */
+  /* Closing its output does not end the wait early either. */
+  make_script("exec >&- 2>&-; exec sleep 30");
+  t0 = now_ms();
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 300, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_true(now_ms() - t0 < 3000);
+  assert_int_equal(waitpid(-1, &st, WNOHANG), -1);
+}
+
+/* A check that keeps writing is still killed at the deadline. */
+static void continuous_output_times_out(void)
+{
+  char out[512];
+  long t0;
+  int st;
+
+  make_script("yes flooding &\nwriter=$!\nsleep 4\nkill \"$writer\"");
+  t0 = now_ms();
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 500, out, sizeof(out)),
+                   CONF_PRECHECK_FAILED);
+  assert_true(now_ms() - t0 < 3000);
+  assert_non_null(strstr(out, "flooding\n"));
+  assert_non_null(strstr(out, "it did not finish in 500 ms"));
+  assert_int_equal(waitpid(-1, &st, WNOHANG), -1);
+}
+
+/* A process the check left behind holding its output does not hold the
+ * server: the check's own status is what counts, and what it left is
+ * killed with it (its process group). */
+static void a_leftover_process_does_not_hold_the_wait(void)
+{
+  char out[512];
+  long t0;
+
+  make_script("echo 'Config parse error in file c on line 2: x' >&2\n"
+              "sleep 30 &\nexit 7");
+  t0 = now_ms();
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_ERRORS);
+  assert_true(now_ms() - t0 < 2000);
+  assert_non_null(strstr(out, "on line 2"));
+}
+
+/* More output than the buffer holds is read to the end (the check never
+ * blocks on a full pipe) and cut. */
+static void long_output_is_cut(void)
+{
+  char out[64];
+
+  make_script("i=0; while [ $i -lt 4000 ]; do echo 'Config parse error in file a on line 1: x' >&2; i=$((i+1)); done; exit 7");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 10000, out, sizeof(out)),
+                   CONF_PRECHECK_ERRORS);
+  assert_int_equal(strlen(out), sizeof(out) - 1);
+}
+
+/* The check gets none of the server's descriptors. */
+static void descriptors_are_not_inherited(void)
+{
+  char out[512], conf[16];
+  int p[2];
+
+  assert_int_equal(pipe(p), 0);
+  snprintf(conf, sizeof(conf), "%d", p[1]);
+  make_script("if [ -e /proc/self/fd/1 ]; then dir=/proc/self/fd\n"
+              "elif [ -e /dev/fd/1 ]; then dir=/dev/fd\n"
+              "else echo unavailable; exit 0; fi\n"
+              "if [ -e \"$dir/$5\" ]; then echo open; else echo closed; fi");
+  assert_int_equal(conf_precheck_run(script, "/tmp", conf, 5000, out, sizeof(out)),
+                   CONF_PRECHECK_OK);
+  close(p[0]);
+  close(p[1]);
+  if (!strcmp(out, "unavailable\n")) {
+    printf("skipped descriptors_are_not_inherited: no descriptor list\n");
+    return;
+  }
+  assert_string_equal(out, "closed\n");
+}
+
+/* A check that crashes leaves no core file, whatever the server's own
+ * limit: the check runs with a core limit of 0. */
+static void a_check_leaves_no_core(void)
+{
+  struct rlimit rl;
+  char out[64];
+
+  assert_int_equal(getrlimit(RLIMIT_CORE, &rl), 0);
+  rl.rlim_cur = rl.rlim_max;    /* as set_core_limit() does */
+  assert_int_equal(setrlimit(RLIMIT_CORE, &rl), 0);
+  make_script("ulimit -c");
+  assert_int_equal(conf_precheck_run(script, "/tmp", "c", 5000, out, sizeof(out)),
+                   CONF_PRECHECK_OK);
+  assert_string_equal(out, "0\n");
+}
+
+/* ---- Which binary the check runs (conf_precheck_started(),
+ * conf_precheck_binary()).  Files in a directory of their own stand in
+ * for /proc/self/exe, the file the server was started as, and SPATH. ---- */
+
+static char bdir[64], b_image[96], b_self[96], b_other[96], b_spath[96];
+
+static void put_file(const char *path, int mode)
+{
+  FILE *f = fopen(path, "w");
+
+  assert_non_null(f);
+  if (!f)
+    return;
+  fprintf(f, "#!/bin/sh\nexit 0\n");
+  fclose(f);
+  assert_int_equal(chmod(path, mode), 0);
+}
+
+/* image: the server's binary.  self: another name of the same file, as
+ * /proc/self/exe is.  other: another program (what /proc/self/exe names
+ * under valgrind).  spath: a third program. */
+static void binary_setup(void)
+{
+  char made[64], real[PATH_MAX];
+
+  snprintf(made, sizeof(made), "/tmp/conf_precheck_bin_XXXXXX");
+  assert_non_null(mkdtemp(made));
+  assert_non_null(realpath(made, real));        /* /tmp may be a link */
+  assert_true(strlen(real) < sizeof(bdir));
+  strcpy(bdir, real);
+  snprintf(b_image, sizeof(b_image), "%s/image", bdir);
+  snprintf(b_self, sizeof(b_self), "%s/self", bdir);
+  snprintf(b_other, sizeof(b_other), "%s/other", bdir);
+  snprintf(b_spath, sizeof(b_spath), "%s/spath", bdir);
+  put_file(b_image, 0700);
+  put_file(b_other, 0700);
+  put_file(b_spath, 0700);
+  assert_int_equal(link(b_image, b_self), 0);
+  conf_precheck_started(NULL);
+}
+
+static void binary_teardown(void)
+{
+  unlink(b_image);
+  unlink(b_self);
+  unlink(b_other);
+  unlink(b_spath);
+  rmdir(bdir);
+  conf_precheck_started(NULL);
+}
+
+/* Started from a file that is not SPATH (a copy, the build tree, a
+ * versioned name): the server's own image does the check. */
+static void started_as_its_own_image_uses_self(void)
+{
+  binary_setup();
+  conf_precheck_started(b_image);
+  assert_ptr_equal(conf_precheck_binary(b_self, b_spath), b_self);
+  binary_teardown();
+}
+
+/* Started by a name that cannot be found again, from SPATH (a restart
+ * execs SPATH with the first argv[0]): its own image. */
+static void spath_is_its_image_uses_self(void)
+{
+  binary_setup();
+  conf_precheck_started("ircd");        /* no directory: not looked up */
+  assert_ptr_equal(conf_precheck_binary(b_self, b_image), b_self);
+  conf_precheck_started(NULL);
+  assert_ptr_equal(conf_precheck_binary(b_self, b_image), b_self);
+  binary_teardown();
+}
+
+/* Under valgrind /proc/self/exe is valgrind's tool: the file the server
+ * was started as does the check, whatever is at SPATH. */
+static void self_is_another_program_uses_the_started_file(void)
+{
+  binary_setup();
+  conf_precheck_started(b_image);
+  assert_string_equal(conf_precheck_binary(b_other, b_spath), b_image);
+  binary_teardown();
+}
+
+/* Nothing says which file the server is: SPATH. */
+static void nothing_known_uses_spath(void)
+{
+  binary_setup();
+  conf_precheck_started("ircd");
+  assert_ptr_equal(conf_precheck_binary(b_other, b_spath), b_spath);
+  conf_precheck_started(NULL);
+  assert_ptr_equal(conf_precheck_binary(b_other, b_spath), b_spath);
+  /* started as a file that is gone, or that cannot be executed */
+  conf_precheck_started("/tmp/conf_precheck_no_such_file");
+  assert_ptr_equal(conf_precheck_binary(b_other, b_spath), b_spath);
+  assert_int_equal(chmod(b_image, 0600), 0);
+  conf_precheck_started(b_image);
+  assert_ptr_equal(conf_precheck_binary(b_other, b_spath), b_spath);
+  binary_teardown();
+}
+
+/* No /proc: the file the server was started as, else SPATH. */
+static void without_self_uses_the_started_file(void)
+{
+  binary_setup();
+  conf_precheck_started(b_image);
+  assert_string_equal(conf_precheck_binary("/tmp/conf_precheck_no_proc/exe",
+                                           b_spath), b_image);
+  conf_precheck_started(NULL);
+  assert_ptr_equal(conf_precheck_binary("/tmp/conf_precheck_no_proc/exe",
+                                        b_spath), b_spath);
+  binary_teardown();
+}
+
+/* argv[0] relative to where the server was started is kept as the file
+ * it named then: main() changes directory afterwards. */
+static void a_relative_start_is_resolved_at_once(void)
+{
+  char cwd[256];
+
+  binary_setup();
+  assert_non_null(getcwd(cwd, sizeof(cwd)));
+  assert_int_equal(chdir(bdir), 0);
+  conf_precheck_started("./image");
+  assert_int_equal(chdir("/"), 0);
+  assert_ptr_equal(conf_precheck_binary(b_self, b_spath), b_self);
+  assert_string_equal(conf_precheck_binary(b_other, b_spath), b_image);
+  assert_int_equal(chdir(cwd), 0);
+  binary_teardown();
+}
+
+int main(void)
+{
+  void (*cases[])(void) = {
+    errors_are_reported, a_clean_file_passes, the_arguments,
+    other_ends_fail, a_failed_fork_says_why,
+    a_large_descriptor_limit_is_quick, a_crash_fails,
+    sigchld_ignored_is_still_waited_for, a_hung_check_is_killed,
+    continuous_output_times_out,
+    a_leftover_process_does_not_hold_the_wait, long_output_is_cut,
+    descriptors_are_not_inherited, a_check_leaves_no_core,
+    started_as_its_own_image_uses_self, spath_is_its_image_uses_self,
+    self_is_another_program_uses_the_started_file, nothing_known_uses_spath,
+    without_self_uses_the_started_file, a_relative_start_is_resolved_at_once,
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    cases[i]();
+    teardown();
+  }
+  printf("conf_precheck_t: %d checks, %d failed\n", checks, failures);
+  return failures ? 1 : 0;
+}
