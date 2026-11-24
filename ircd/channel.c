@@ -492,22 +492,23 @@ struct Ban *find_ban(struct Client *cptr, struct Ban *banlist, int extbantype, i
             found = find_ban(cptr, chptr->banlist, extbantype, level + 1);
         }
       } else if (banlist->extban.nu_len) {
-        /* Compare nick!user portion of ban. */
+        /* Both parts of a nick!user@host mask must match, as for a
+         * plain ban below: the nick!user part ... */
         banlist->extban.mask[banlist->extban.nu_len] = '\0';
         res = match(banlist->extban.mask, nu);
         banlist->extban.mask[banlist->extban.nu_len] = '@';
-        if (!res)
-          ismatch = 1;
-        /* Compare host portion of ban. */
+        /* ... and the host part, against any of the user's addresses
+         * and host names. */
         hostmask = banlist->extban.mask + banlist->extban.nu_len + 1;
-        if (((banlist->flags & BAN_IPMASK)
-             && ipmask_check(&cli_ip(cptr), &banlist->address, banlist->addrbits))
-            && !match(hostmask, cli_user(cptr)->host)
-            && !match(hostmask, cli_user(cptr)->realhost)
-            && (IsCloakIP(cptr) && !match(hostmask, cli_user(cptr)->cloakip))
-            && (IsCloakHost(cptr) && !match(hostmask, cli_user(cptr)->cloakhost))
-            && (sr && !match(hostmask, sr)))
-            ismatch = 1;
+        if (!res
+            && (((banlist->flags & BAN_IPMASK)
+                 && ipmask_check(&cli_ip(cptr), &banlist->address, banlist->addrbits))
+                || !match(hostmask, cli_user(cptr)->host)
+                || !match(hostmask, cli_user(cptr)->realhost)
+                || (IsCloakIP(cptr) && !match(hostmask, cli_user(cptr)->cloakip))
+                || (IsCloakHost(cptr) && !match(hostmask, cli_user(cptr)->cloakhost))
+                || (sr && !match(hostmask, sr))))
+          ismatch = 1;
       }
       if ((banlist->extban.flags & extbantype) || !(banlist->extban.flags & EBAN_ACTIVITY)) {
         if ((banlist->extban.flags & EBAN_NEGATEMASK) && !ismatch)
@@ -542,6 +543,44 @@ struct Ban *find_ban(struct Client *cptr, struct Ban *banlist, int extbantype, i
   return found;
 }
 
+/** Whether a verdict on @a list may be kept in a member's ban cache: not
+ * when the list holds a ~c or ~j entry.  Those match by the user's other
+ * channels (and its status there) and by another channel's lists, which
+ * change without anything happening in this channel or to the user, so
+ * nothing would clear the verdict.  Such a list is matched afresh at
+ * every check.
+ * @param[in] list A channel's ban or exception list.
+ * @return Non-zero when a verdict on @a list may be cached. */
+static int ban_list_cacheable(const struct Ban *list)
+{
+  for (; list; list = list->next)
+    if ((list->flags & BAN_EXTENDED)
+        && (list->extban.flags & (EBAN_CHANNEL | EBAN_JOIN)))
+      return 0;
+  return 1;
+}
+
+/** Forget @a member's cached verdicts when its user's oper status is not
+ * the one they were found under.  find_ban() also matches an account
+ * holder by "<account>.<hidden host>" under HOST_HIDING_STYLE 1 and 3,
+ * and that hidden host is HIDDEN_OPERHOST for an oper (OPERHOST_HIDING).
+ * The status changes on several paths (OPER, MODE -o), and not all of
+ * them change the host the user shows, which is what clears the cache
+ * otherwise (hide_hostmask()).
+ * @param[in] member A local member about to read its cache. */
+static void ban_cache_check_oper(struct Membership *member)
+{
+  unsigned int oper = IsAnOper(member->user) ? MBFL_BANCACHE_OPER : 0;
+
+  if ((member->banflags & MBFL_BANCACHE_OPER) == oper)
+    return;
+  member->banflags &= ~(MBFL_BANVALID | MBFL_BANVALID_QUIET
+                        | MBFL_BANVALID_NICK | MBFL_EXCEPTVALID
+                        | MBFL_EXCEPTVALID_QUIET | MBFL_EXCEPTVALID_NICK
+                        | MBFL_BANCACHE_OPER);
+  member->banflags |= oper;
+}
+
 /**
  * This function returns true if the user is banned on the said channel.
  * This function will check the ban cache if applicable, otherwise will
@@ -553,6 +592,10 @@ struct Ban *find_ban(struct Client *cptr, struct Ban *banlist, int extbantype, i
  */
 static int is_banned(struct Membership* member, int extbantype)
 {
+  if (!ban_list_cacheable(member->channel->banlist))
+    return find_ban(member->user, member->channel->banlist, extbantype, 0) != NULL;
+  ban_cache_check_oper(member);
+
   if (extbantype) {
     if (extbantype == EBAN_NICK) {
       if (IsBanValidNick(member))
@@ -605,6 +648,11 @@ static int is_banned(struct Membership* member, int extbantype)
  */
 static int is_excepted(struct Membership* member, int extbantype)
 {
+  if (!ban_list_cacheable(member->channel->exceptlist))
+    return find_ban(member->user, member->channel->exceptlist,
+                    extbantype | EBAN_EXCEPTLIST, 0) != NULL;
+  ban_cache_check_oper(member);
+
   if (extbantype) {
     if (extbantype == EBAN_NICK) {
       if (IsExceptValidNick(member))
@@ -643,6 +691,28 @@ static int is_excepted(struct Membership* member, int extbantype)
       ClearExcepted(member);
       return 0;
     }
+  }
+}
+
+/** Forget every ban verdict cached on @a cptr's memberships (all six:
+ * plain, ~n and ~q bans and their exceptions), so the next check matches
+ * its bans afresh.  For a change of what a ban can match that does not go
+ * through the paths that already clear them (set_nick_name(), the host
+ * hiding).
+ * @param[in] cptr A user. */
+void member_ban_cache_clear(struct Client *cptr)
+{
+  struct Membership *m;
+
+  if (!cli_user(cptr))
+    return;
+  for (m = cli_user(cptr)->channel; m; m = m->next_channel) {
+    ClearBanValid(m);
+    ClearBanValidNick(m);
+    ClearBanValidQuiet(m);
+    ClearExceptValid(m);
+    ClearExceptValidNick(m);
+    ClearExceptValidQuiet(m);
   }
 }
 
@@ -2795,7 +2865,8 @@ modebuf_flush(struct ModeBuf *mbuf)
  *
  * @param mbuf		The mode buffer to extract the modes from.
  * @param buf		The string buffer to write the modes into.
- * @param oplevels	Include oplevels modes (+AU)?
+ * @param oplevels	Include oplevels modes (+AU)?  The other modes,
+ *			extended ones included, are always there.
  */
 void
 modebuf_extract(struct ModeBuf *mbuf, char *buf, int oplevels)
@@ -2883,11 +2954,10 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf, int oplevels)
     }
   }
 
+  /* The extended modes go to every peer: only +A/+U depend on oplevels. */
   for (flag_p = exflags; flag_p[0]; flag_p += 2) {
-    if (*flag_p & exadd) {
-      if (!(!oplevels)) /* Nothing like a double negative to wake you up in the morning */
-        buf[bufpos++] = flag_p[1];
-    }
+    if (*flag_p & exadd)
+      buf[bufpos++] = flag_p[1];
   }
 
   for (i = 0, len = bufpos; i < len; i++) {

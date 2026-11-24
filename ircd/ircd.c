@@ -27,6 +27,7 @@
 #include "IPcheck.h"
 #include "class.h"
 #include "client.h"
+#include "conf_precheck.h"
 #include "crule.h"
 #include "destruct_event.h"
 #include "hash.h"
@@ -650,6 +651,9 @@ int main(int argc, char **argv) {
 
   parse_command_line(argc, argv);
 
+  /* Before the chdir(): argv[0] may be relative to where we started. */
+  conf_precheck_started(argv[0]);
+
   if (chdir(dpath)) {
     fprintf(stderr, "Fail: Cannot chdir(%s): %s, check DPATH\n", dpath, strerror(errno));
     return 2;
@@ -658,9 +662,13 @@ int main(int argc, char **argv) {
   if (!set_userid_if_needed())
     return 3;
 
-  /* Check paths for accessibility */
-  if (!check_file_access(SPATH, 'S', X_OK) ||
-      !check_file_access(configfile, 'C', R_OK))
+  /* Only a daemon run needs SPATH for restarts. */
+  if (!(thisServer.bootopt & BOOT_CHKCONF)) {
+    if (!check_file_access(SPATH, 'S', X_OK))
+      return 4;
+    conf_precheck_init();
+  }
+  if (!check_file_access(configfile, 'C', R_OK))
     return 4;
 
   if (!init_connection_limits())
@@ -695,6 +703,11 @@ int main(int argc, char **argv) {
   setup_signals();
   feature_init(); /* initialize features... */
   init_isupport(); /* initialize RPL_ISUPPORT... */
+  /* A configuration check (a REHASH runs one in a process of its own)
+   * says what it found on stderr, and nothing in the server's log files
+   * or syslog: a check of a file with errors is not the server failing. */
+  if (thisServer.bootopt & BOOT_CHKCONF)
+    log_quiet();
   log_init(*argv);
   set_nomem_handler(outofmemory);
 
